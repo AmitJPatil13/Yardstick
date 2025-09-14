@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Multi-tenant SaaS Notes Application Schema
+// Using shared schema with tenant ID column approach for data isolation
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String   @unique // "Acme", "Globex"
+  slug      String   @unique // "acme", "globex"
+  plan      Plan     @default(FREE)
+  users     User[]
+  notes     Note[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("tenants")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String   // bcrypt hashed
+  role      Role     @default(MEMBER)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  notes     Note[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Ensure email uniqueness within tenant context
+  @@unique([email, tenantId])
+  @@map("users")
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  title     String
+  content   String   @db.Text
+  tenantId  String   // Critical for data isolation
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Index for efficient tenant-scoped queries
+  @@index([tenantId, createdAt])
+  @@map("notes")
+}
+
+enum Role {
+  ADMIN  // Can invite users and upgrade subscriptions
+  MEMBER // Can only create, view, edit, and delete notes
+}
+
+enum Plan {
+  FREE // Limited to 3 notes maximum
+  PRO  // Unlimited notes
+}
